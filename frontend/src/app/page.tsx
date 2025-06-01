@@ -1,103 +1,249 @@
-import Image from "next/image";
+'use client';
 
-export default function Home() {
+import { useEffect, useRef, useState } from 'react';
+import styles from './page.module.css';
+
+export default function LocationMap() {
+  const mapContainer = useRef(null);
+  const map = useRef(null);
+  const marker = useRef(null);
+  const [searchInput, setSearchInput] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Load Mapbox GL JS dynamically
+  useEffect(() => {
+    const loadMapbox = async () => {
+      if (typeof window !== 'undefined' && !window.mapboxgl) {
+        // Load Mapbox CSS
+        const link = document.createElement('link');
+        link.href = 'https://cdnjs.cloudflare.com/ajax/libs/mapbox-gl/2.15.0/mapbox-gl.min.css';
+        link.rel = 'stylesheet';
+        document.head.appendChild(link);
+
+        // Load Mapbox JS
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/mapbox-gl/2.15.0/mapbox-gl.min.js';
+        script.onload = () => {
+          window.mapboxgl.accessToken = 'pk.eyJ1IjoibWFwYm94IiwiYSI6ImNpejY4NXVycTA2emYycXBndHRqcmZ3N3gifQ.rJcFIG214AriISLbB6B5aw';
+          getCurrentLocation();
+        };
+        document.head.appendChild(script);
+      } else if (window.mapboxgl) {
+        getCurrentLocation();
+      }
+    };
+
+    loadMapbox();
+  }, []);
+
+  // Initialize the map
+  const initMap = (lng = -74.5, lat = 40, zoom = 9) => {
+    if (!window.mapboxgl || !mapContainer.current) return;
+
+    map.current = new window.mapboxgl.Map({
+      container: mapContainer.current,
+      style: 'mapbox://styles/mapbox/streets-v12',
+      center: [lng, lat],
+      zoom: zoom,
+      attributionControl: true
+    });
+
+    // Add navigation controls
+    map.current.addControl(new window.mapboxgl.NavigationControl(), 'top-right');
+
+    // Add marker
+    marker.current = new window.mapboxgl.Marker({
+      color: '#667eea',
+      scale: 1.2
+    })
+    .setLngLat([lng, lat])
+    .addTo(map.current);
+
+    // Add smooth transitions
+    map.current.on('load', () => {
+      map.current.getCanvas().style.cursor = 'grab';
+      setIsLoading(false);
+    });
+
+    map.current.on('mousedown', () => {
+      map.current.getCanvas().style.cursor = 'grabbing';
+    });
+
+    map.current.on('mouseup', () => {
+      map.current.getCanvas().style.cursor = 'grab';
+    });
+  };
+
+  // Get user's current location
+  const getCurrentLocation = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          initMap(lng, lat, 12);
+          clearError();
+        },
+        (error) => {
+          let errorMsg = 'Unable to get your location. ';
+          switch(error.code) {
+            case error.PERMISSION_DENIED:
+              errorMsg += 'Location access denied.';
+              break;
+            case error.POSITION_UNAVAILABLE:
+              errorMsg += 'Location information unavailable.';
+              break;
+            case error.TIMEOUT:
+              errorMsg += 'Location request timed out.';
+              break;
+            default:
+              errorMsg += 'An unknown error occurred.';
+              break;
+          }
+          showError(errorMsg + ' Showing default location.');
+          initMap(); // Default location
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
+        }
+      );
+    } else {
+      showError('Geolocation is not supported by this browser. Showing default location.');
+      initMap(); // Default location
+    }
+  };
+
+  // Search for location using Mapbox Geocoding API
+  const searchLocation = async (query) => {
+    if (!query.trim()) {
+      showError('Please enter a location to search.');
+      return;
+    }
+
+    if (!window.mapboxgl) {
+      showError('Map is still loading. Please try again in a moment.');
+      return;
+    }
+
+    try {
+      clearError();
+      const response = await fetch(
+        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${window.mapboxgl.accessToken}&limit=1`
+      );
+      
+      if (!response.ok) {
+        throw new Error('Geocoding request failed');
+      }
+
+      const data = await response.json();
+      
+      if (data.features && data.features.length > 0) {
+        const feature = data.features[0];
+        const [lng, lat] = feature.center;
+        
+        // Animate to new location
+        map.current.flyTo({
+          center: [lng, lat],
+          zoom: 12,
+          duration: 2000,
+          essential: true
+        });
+
+        // Update marker position
+        marker.current.setLngLat([lng, lat]);
+
+        // Add popup with location name
+        const popup = new window.mapboxgl.Popup({ offset: 25 })
+          .setLngLat([lng, lat])
+          .setHTML(`<div style="padding: 10px; text-align: center;"><h3 style="margin: 0; color: #2d3748;">${feature.place_name}</h3></div>`)
+          .addTo(map.current);
+
+        // Auto close popup after 3 seconds
+        setTimeout(() => {
+          popup.remove();
+        }, 3000);
+
+      } else {
+        showError('Location not found. Please try a different search term.');
+      }
+    } catch (error) {
+      let errorMsg = 'Error searching location. ';
+      if (error.message.includes('fetch')) {
+        errorMsg += 'Network connection issue.';
+      } else if (error.message.includes('Geocoding')) {
+        errorMsg += 'Search service unavailable.';
+      } else {
+        errorMsg += 'Please try again.';
+      }
+      showError(errorMsg);
+    }
+  };
+
+  // Show error message
+  const showError = (message) => {
+    setErrorMessage(message);
+  };
+
+  // Clear error message
+  const clearError = () => {
+    setErrorMessage('');
+  };
+
+  // Handle search
+  const handleSearch = () => {
+    searchLocation(searchInput);
+  };
+
+  // Handle enter key
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      searchLocation(searchInput);
+    }
+  };
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
+    <div className={styles.container}>
+      <h1 className={styles.title}>🗺️ Location Explorer</h1>
+      
+      <div className={styles.searchContainer}>
+        <input 
+          type="text" 
+          className={styles.searchInput}
+          placeholder="Search for any location (e.g., Paris, New York, Tokyo)..."
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          onKeyPress={handleKeyPress}
         />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+        <button 
+          className={styles.searchButton}
+          onClick={handleSearch}
+        >
+          Search
+        </button>
+      </div>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+      {errorMessage && (
+        <div className={styles.error}>
+          {errorMessage}
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      )}
+      
+      <div className={styles.mapWrapper}>
+        {isLoading && (
+          <div className={styles.loading}>
+            <div className={styles.spinner}></div>
+            <p>Loading your current location...</p>
+          </div>
+        )}
+        <div 
+          ref={mapContainer} 
+          className={styles.map}
+          style={{ visibility: isLoading ? 'hidden' : 'visible' }}
+        />
+      </div>
     </div>
   );
 }
