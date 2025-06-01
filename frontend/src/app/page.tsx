@@ -8,62 +8,80 @@ export default function LocationMap() {
   const mapContainer = useRef(null);
   const map = useRef(null);
   const marker = useRef(null);
+  const geocoder = useRef(null);
   const [searchInput, setSearchInput] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [mapboxLoaded, setMapboxLoaded] = useState(false);
+  const [googleMapsLoaded, setGoogleMapsLoaded] = useState(false);
 
-  // Handle Mapbox script load
-  /* const handleMapboxLoad = () => {
-    if (window.mapboxgl) {
-      window.mapboxgl.accessToken = 'pk.eyJ1IjoibWFwd29ya3NhaSIsImEiOiJjbWFsYnlyMm4wNnlsMmxxMG8xZjkwbjhiIn0.BqwAtkSjVxzQXzg5DkduqA';
-      setMapboxLoaded(true);
+  // Handle Google Maps script load
+  const handleGoogleMapsLoad = () => {
+    if (window.google && window.google.maps) {
+      // Initialize geocoder
+      geocoder.current = new window.google.maps.Geocoder();
+      setGoogleMapsLoaded(true);
     }
   };
 
-  // Initialize map when Mapbox is loaded
+  // Initialize map when Google Maps is loaded
   useEffect(() => {
-    if (mapboxLoaded) {
+    if (googleMapsLoaded) {
       getCurrentLocation();
     }
-  }, [mapboxLoaded]);
+  }, [googleMapsLoaded]);
 
   // Initialize the map
-  const initMap = (lng = -74.5, lat = 40, zoom = 9) => {
-    if (!window.mapboxgl || !mapContainer.current) return;
+  const initMap = (lat = 40.7128, lng = -74.0060, zoom = 10) => {
+    if (!window.google || !mapContainer.current) return;
 
-    map.current = new window.mapboxgl.Map({
-      container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/streets-v12',
-      center: [lng, lat],
+    // Create map
+    map.current = new window.google.maps.Map(mapContainer.current, {
+      center: { lat, lng },
       zoom: zoom,
-      attributionControl: true
+      mapTypeControl: true,
+      streetViewControl: true,
+      fullscreenControl: true,
+      zoomControl: true,
+      styles: [
+        {
+          featureType: 'all',
+          elementType: 'geometry.fill',
+          stylers: [{ weight: '2.00' }]
+        },
+        {
+          featureType: 'all',
+          elementType: 'geometry.stroke',
+          stylers: [{ color: '#9c9c9c' }]
+        },
+        {
+          featureType: 'all',
+          elementType: 'labels.text',
+          stylers: [{ visibility: 'on' }]
+        }
+      ]
     });
 
-    // Add navigation controls
-    map.current.addControl(new window.mapboxgl.NavigationControl(), 'top-right');
-
-    // Add marker
-    marker.current = new window.mapboxgl.Marker({
-      color: '#667eea',
-      scale: 1.2
-    })
-    .setLngLat([lng, lat])
-    .addTo(map.current);
-
-    // Add smooth transitions
-    map.current.on('load', () => {
-      map.current.getCanvas().style.cursor = 'grab';
-      setIsLoading(false);
+    // Create marker
+    marker.current = new window.google.maps.Marker({
+      position: { lat, lng },
+      map: map.current,
+      title: 'Selected Location',
+      animation: window.google.maps.Animation.DROP,
+      icon: {
+        url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
+          <svg width="30" height="40" viewBox="0 0 30 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M15 0C6.71573 0 0 6.71573 0 15C0 23.2843 15 40 15 40C15 40 30 23.2843 30 15C30 6.71573 23.2843 0 15 0Z" fill="#667eea"/>
+            <circle cx="15" cy="15" r="8" fill="white"/>
+            <circle cx="15" cy="15" r="4" fill="#667eea"/>
+          </svg>
+        `),
+        scaledSize: new window.google.maps.Size(30, 40),
+        anchor: new window.google.maps.Point(15, 40)
+      }
     });
 
-    map.current.on('mousedown', () => {
-      map.current.getCanvas().style.cursor = 'grabbing';
-    });
-
-    map.current.on('mouseup', () => {
-      map.current.getCanvas().style.cursor = 'grab';
-    });
+    setIsLoading(false);
+    clearError();
   };
 
   // Get user's current location
@@ -73,7 +91,7 @@ export default function LocationMap() {
         (position) => {
           const lat = position.coords.latitude;
           const lng = position.coords.longitude;
-          initMap(lng, lat, 12);
+          initMap(lat, lng, 14);
           clearError();
         },
         (error) => {
@@ -92,7 +110,7 @@ export default function LocationMap() {
               errorMsg += 'An unknown error occurred.';
               break;
           }
-          showError(errorMsg + ' Showing default location.');
+          showError(errorMsg + ' Showing default location (New York City).');
           initMap(); // Default location
         },
         {
@@ -107,69 +125,74 @@ export default function LocationMap() {
     }
   };
 
-  // Search for location using Mapbox Geocoding API
+  // Search for location using Google Maps Geocoding API
   const searchLocation = async (query) => {
     if (!query.trim()) {
       showError('Please enter a location to search.');
       return;
     }
 
-    if (!mapboxLoaded || !window.mapboxgl) {
+    if (!googleMapsLoaded || !geocoder.current) {
       showError('Map is still loading. Please try again in a moment.');
       return;
     }
 
     try {
       clearError();
-      const response = await fetch(
-        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${window.mapboxgl.accessToken}&limit=1`
-      );
       
-      if (!response.ok) {
-        throw new Error('Geocoding request failed');
-      }
+      geocoder.current.geocode({ address: query }, (results, status) => {
+        if (status === 'OK' && results[0]) {
+          const location = results[0].geometry.location;
+          const lat = location.lat();
+          const lng = location.lng();
+          
+          // Animate to new location
+          map.current.panTo({ lat, lng });
+          map.current.setZoom(14);
+          
+          // Update marker position with animation
+          marker.current.setPosition({ lat, lng });
+          marker.current.setAnimation(window.google.maps.Animation.BOUNCE);
+          
+          // Stop bouncing after 2 seconds
+          setTimeout(() => {
+            marker.current.setAnimation(null);
+          }, 2000);
 
-      const data = await response.json();
-      
-      if (data.features && data.features.length > 0) {
-        const feature = data.features[0];
-        const [lng, lat] = feature.center;
-        
-        // Animate to new location
-        map.current.flyTo({
-          center: [lng, lat],
-          zoom: 12,
-          duration: 2000,
-          essential: true
-        });
+          // Create info window with location details
+          const infoWindow = new window.google.maps.InfoWindow({
+            content: `
+              <div style="padding: 10px; text-align: center; max-width: 200px;">
+                <h3 style="margin: 0 0 5px 0; color: #2d3748; font-size: 16px;">${results[0].formatted_address}</h3>
+                <p style="margin: 0; color: #4a5568; font-size: 12px;">Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}</p>
+              </div>
+            `
+          });
 
-        // Update marker position
-        marker.current.setLngLat([lng, lat]);
+          // Show info window
+          infoWindow.open(map.current, marker.current);
 
-        // Add popup with location name
-        const popup = new window.mapboxgl.Popup({ offset: 25 })
-          .setLngLat([lng, lat])
-          .setHTML(`<div style="padding: 10px; text-align: center;"><h3 style="margin: 0; color: #2d3748;">${feature.place_name}</h3></div>`)
-          .addTo(map.current);
+          // Auto close info window after 4 seconds
+          setTimeout(() => {
+            infoWindow.close();
+          }, 4000);
 
-        // Auto close popup after 3 seconds
-        setTimeout(() => {
-          popup.remove();
-        }, 3000);
-
-      } else {
-        showError('Location not found. Please try a different search term.');
-      }
+        } else {
+          let errorMsg = 'Location not found. ';
+          if (status === 'ZERO_RESULTS') {
+            errorMsg += 'Please try a different search term.';
+          } else if (status === 'OVER_QUERY_LIMIT') {
+            errorMsg += 'Search quota exceeded. Try again later.';
+          } else if (status === 'REQUEST_DENIED') {
+            errorMsg += 'Search request denied.';
+          } else {
+            errorMsg += 'Please try again.';
+          }
+          showError(errorMsg);
+        }
+      });
     } catch (error) {
-      let errorMsg = 'Error searching location. ';
-      if (error.message.includes('fetch')) {
-        errorMsg += 'Network connection issue.';
-      } else if (error.message.includes('Geocoding')) {
-        errorMsg += 'Search service unavailable.';
-      } else {
-        errorMsg += 'Please try again.';
-      }
-      showError(errorMsg);
+      showError('Error searching location. Please try again.');
     }
   };
 
@@ -193,20 +216,14 @@ export default function LocationMap() {
     if (e.key === 'Enter') {
       searchLocation(searchInput);
     }
-  }; */
+  };
 
   return (
     <>
-      {/* Load Mapbox CSS */}
-      <link 
-        href="https://cdnjs.cloudflare.com/ajax/libs/mapbox-gl/2.15.0/mapbox-gl.min.css" 
-        rel="stylesheet" 
-      />
-      
-      {/* Load Mapbox JS */}
+      {/* Load Google Maps JavaScript API */}
       <Script
-        src="https://cdnjs.cloudflare.com/ajax/libs/mapbox-gl/2.15.0/mapbox-gl.min.js"
-        /*onLoad={handleMapboxLoad}*/
+        src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || 'YOUR_API_KEY_HERE'}&libraries=geometry,places`}
+        onLoad={handleGoogleMapsLoad}
         strategy="afterInteractive"
       />
 
@@ -220,11 +237,11 @@ export default function LocationMap() {
             placeholder="Search for any location (e.g., Paris, New York, Tokyo)..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            /*onKeyPress={handleKeyPress}*/
+            onKeyPress={handleKeyPress}
           />
           <button 
             className={styles.searchButton}
-            /*onClick={handleSearch}*/
+            onClick={handleSearch}
           >
             Search
           </button>
