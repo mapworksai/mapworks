@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Script from 'next/script';
 import styles from './page.module.css';
 
 export default function LocationMap() {
@@ -10,32 +11,22 @@ export default function LocationMap() {
   const [searchInput, setSearchInput] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [mapboxLoaded, setMapboxLoaded] = useState(false);
 
-  // Load Mapbox GL JS dynamically
+  // Handle Mapbox script load
+  /* const handleMapboxLoad = () => {
+    if (window.mapboxgl) {
+      window.mapboxgl.accessToken = 'pk.eyJ1IjoibWFwd29ya3NhaSIsImEiOiJjbWFsYnlyMm4wNnlsMmxxMG8xZjkwbjhiIn0.BqwAtkSjVxzQXzg5DkduqA';
+      setMapboxLoaded(true);
+    }
+  };
+
+  // Initialize map when Mapbox is loaded
   useEffect(() => {
-    const loadMapbox = async () => {
-      if (typeof window !== 'undefined' && !window.mapboxgl) {
-        // Load Mapbox CSS
-        const link = document.createElement('link');
-        link.href = 'https://cdnjs.cloudflare.com/ajax/libs/mapbox-gl/2.15.0/mapbox-gl.min.css';
-        link.rel = 'stylesheet';
-        document.head.appendChild(link);
-
-        // Load Mapbox JS
-        const script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/mapbox-gl/2.15.0/mapbox-gl.min.js';
-        script.onload = () => {
-          window.mapboxgl.accessToken = 'pk.eyJ1IjoibWFwYm94IiwiYSI6ImNpejY4NXVycTA2emYycXBndHRqcmZ3N3gifQ.rJcFIG214AriISLbB6B5aw';
-          getCurrentLocation();
-        };
-        document.head.appendChild(script);
-      } else if (window.mapboxgl) {
-        getCurrentLocation();
-      }
-    };
-
-    loadMapbox();
-  }, []);
+    if (mapboxLoaded) {
+      getCurrentLocation();
+    }
+  }, [mapboxLoaded]);
 
   // Initialize the map
   const initMap = (lng = -74.5, lat = 40, zoom = 9) => {
@@ -123,7 +114,7 @@ export default function LocationMap() {
       return;
     }
 
-    if (!window.mapboxgl) {
+    if (!mapboxLoaded || !window.mapboxgl) {
       showError('Map is still loading. Please try again in a moment.');
       return;
     }
@@ -202,48 +193,63 @@ export default function LocationMap() {
     if (e.key === 'Enter') {
       searchLocation(searchInput);
     }
-  };
+  }; */
 
   return (
-    <div className={styles.container}>
-      <h1 className={styles.title}>🗺️ Location Explorer</h1>
+    <>
+      {/* Load Mapbox CSS */}
+      <link 
+        href="https://cdnjs.cloudflare.com/ajax/libs/mapbox-gl/2.15.0/mapbox-gl.min.css" 
+        rel="stylesheet" 
+      />
       
-      <div className={styles.searchContainer}>
-        <input 
-          type="text" 
-          className={styles.searchInput}
-          placeholder="Search for any location (e.g., Paris, New York, Tokyo)..."
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          onKeyPress={handleKeyPress}
-        />
-        <button 
-          className={styles.searchButton}
-          onClick={handleSearch}
-        >
-          Search
-        </button>
-      </div>
+      {/* Load Mapbox JS */}
+      <Script
+        src="https://cdnjs.cloudflare.com/ajax/libs/mapbox-gl/2.15.0/mapbox-gl.min.js"
+        /*onLoad={handleMapboxLoad}*/
+        strategy="afterInteractive"
+      />
 
-      {errorMessage && (
-        <div className={styles.error}>
-          {errorMessage}
+      <div className={styles.container}>
+        <h1 className={styles.title}>🗺️ Location Explorer</h1>
+        
+        <div className={styles.searchContainer}>
+          <input 
+            type="text" 
+            className={styles.searchInput}
+            placeholder="Search for any location (e.g., Paris, New York, Tokyo)..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            /*onKeyPress={handleKeyPress}*/
+          />
+          <button 
+            className={styles.searchButton}
+            /*onClick={handleSearch}*/
+          >
+            Search
+          </button>
         </div>
-      )}
-      
-      <div className={styles.mapWrapper}>
-        {isLoading && (
-          <div className={styles.loading}>
-            <div className={styles.spinner}></div>
-            <p>Loading your current location...</p>
+
+        {errorMessage && (
+          <div className={styles.error}>
+            {errorMessage}
           </div>
         )}
-        <div 
-          ref={mapContainer} 
-          className={styles.map}
-          style={{ visibility: isLoading ? 'hidden' : 'visible' }}
-        />
+        
+        <div className={styles.mapWrapper}>
+          {isLoading && (
+            <div className={styles.loading}>
+              <div className={styles.spinner}></div>
+              <p>Loading your current location...</p>
+            </div>
+          )}
+          <div 
+            ref={mapContainer} 
+            className={styles.map}
+            style={{ visibility: isLoading ? 'hidden' : 'visible' }}
+          />
+        </div>
       </div>
-    </div>
+    </>
   );
 }
